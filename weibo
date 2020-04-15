@@ -1,0 +1,350 @@
+# coding=utf-8
+import random
+import time
+import json
+import re
+
+import urllib.request
+import requests
+from bs4 import BeautifulSoup as sp
+
+
+
+def get_cookie_from_network():
+    from selenium import webdriver
+    url_login = 'https://passport.weibo.cn/signin/login?entry=mweibo'
+    driver = webdriver.PhantomJS(executable_path=r'E:\下载\phantomjs-2.1.1-windows\phantomjs-2.1.1-windows\bin\phantomjs.exe')
+    driver.get(url_login)
+    # driver.find_element_by_xpath("//div[@class='action']")
+    # driver.find_element_by_xpath('//a[@class="btn btnWhite"]').click()
+    time.sleep(1)
+    driver.find_element_by_xpath('//input[@id="loginName"]').click()
+    driver.find_element_by_xpath('//input[@id="loginName"]').send_keys('******') # 改成你的微博账号
+    driver.find_element_by_xpath('//input[@type="password"]').click()
+    driver.find_element_by_xpath('//input[@type="password"]').send_keys('*****') # 改成你的微博密码
+
+    driver.find_element_by_xpath('//a[@id="loginAction"]').click() # 点击登录
+    time.sleep(1)
+    # 获得 cookie信息
+    cookie_list = driver.get_cookies()
+    print(cookie_list)
+    # cookie_dict = {}
+    # for cookie in cookie_list:
+    #     #写入文件
+    #     f = open(cookie['name']+'.weibo','w')
+    #     pickle.dump(cookie, f)
+    #     f.close()
+    #
+    #     if cookie.has_key('name') and cookie.has_key('value'):
+    #         cookie_dict[cookie['name']] = cookie['value']
+    str=cookie_list[1]['name']+'='+cookie_list[1]['value']+';'
+    str = str+cookie_list[2]['name'] + '=' + cookie_list[2]['value']+';'
+    str = str+cookie_list[3]['name'] + '=' + cookie_list[3]['value']
+
+    return str
+
+
+
+# 定义要爬取的微博大V的微博ID
+
+
+# id=(input("请输入要抓的微博uid:"))
+
+na = 'a'
+
+# 设置代理IP
+iplist = ['112.228.161.57:8118',
+          '125.126.164.21:34592',
+          '122.72.18.35:80',
+          '163.125.151.124:9999',
+          '114.250.25.19:80']
+proxy_addr = "125.126.164.21:34592"
+
+
+# 定义页面打开函数
+def use_proxy(url, proxy_addr):
+    req = urllib.request.Request(url)
+    req.add_header(
+        "User-Agent",
+        "Mozilla/5.0 (Windows NT 6.1; WOW64)\
+         AppleWebKit/537.36 (KHTML, like Gecko)\
+          Chrome/49.0.2623.221 Safari/537.36 SE 2.X MetaSr 1.0")
+
+    proxy = urllib.request.ProxyHandler({'http': random.choice(iplist)})
+    opener = urllib.request.build_opener(proxy, urllib.request.HTTPHandler)
+    urllib.request.install_opener(opener)
+    data = urllib.request.urlopen(req).read().decode('utf-8', 'ignore')
+
+    return data
+
+
+# 获取微博主页的containerid，爬取微博内容时需要此id
+
+def get_containerid(url):
+    data = use_proxy(url, random.choice(iplist))
+    content = json.loads(data).get('data')
+
+    for data in content.get('tabsInfo').get('tabs'):
+        if data.get('tab_type') == 'weibo':
+            containerid = data.get('containerid')
+
+    return containerid
+
+
+# 获取微博大V账号的用户基本信息，如：微博昵称、微博地址、微博头像、关注人数、粉丝数、性别、等级等
+
+def get_userInfo(name):
+    id=getuid(name)
+    url = 'https://m.weibo.cn/api/container/getIndex?type=uid&value='+id
+    data = use_proxy(url, random.choice(iplist))
+    content = json.loads(data).get('data')
+
+    profile_image_url = content.get('userInfo').get('profile_image_url')
+    follow_scheme=content.get('follow_scheme')
+    description = content.get('userInfo').get('description')
+    profile_url = content.get('userInfo').get('profile_url')
+    verified = content.get('userInfo').get('verified')
+    guanzhu = content.get('userInfo').get('follow_count')
+    name = content.get('userInfo').get('screen_name')
+    na = name
+    fensi = content.get('userInfo').get('followers_count')
+    gender = content.get('userInfo').get('gender')
+    urank = content.get('userInfo').get('urank')
+    print("微博昵称："+name+"\n" +
+          "微博主页地址："+profile_url+"\n" +
+          "微博头像地址："+profile_image_url+"\n" +
+          "是否认证："+str(verified)+"\n" +
+          "微博说明："+description+"\n" +
+          "关注人数："+str(guanzhu)+"\n" +
+          "粉丝数："+str(fensi)+"\n" +
+          "性别："+gender+"\n" +
+          "微博等级："+str(urank)+"\n"
+          "关注者列表: "+str(follow_scheme)+"\n")
+
+    return follow_scheme
+# 获取微博内容信息,并保存到文本中，内容包括：每条微博的内容、微博详情页面地址、点赞数、评论数、转发数等
+
+def get_weibo(id, file):
+
+    i = 1
+
+    Directory = 'E:\微博\\'
+
+    while True:
+        url = 'https://m.weibo.cn/api/container/getIndex?type=uid&value='+id
+        weibo_url = 'https://m.weibo.cn/api/container/getIndex?type=uid&value=' + \
+            id+'&containerid='+get_containerid(url)+'&page='+str(i)
+
+        try:
+            data = use_proxy(weibo_url, random.choice(iplist))
+            content = json.loads(data).get('data')
+            cards = content.get('cards')
+
+            if len(cards) > 0:
+                for j in range(len(cards)):
+                    print("-----正在爬取第"+str(i)+"页，第"+str(j)+"条微博------")
+                    card_type = cards[j].get('card_type')
+
+                    if(card_type == 9):
+                        mblog = cards[j].get('mblog')
+                        # print(mblog)
+                        # print(str(mblog).find("转发微博"))
+                        if str(mblog).find('retweeted_status') == -1:
+                            if str(mblog).find('original_pic') != -1:
+                                img_url = re.findall(
+                                    r"'url': '(.+?)'", str(mblog))  # pics(.+?)
+                                n = 1
+                                timename = str(time.time())
+                                timename = timename.replace('.', '')
+                                timename = timename[7:]  # 利用时间作为独特的名称
+
+                                # for url in img_url:
+                                #     print('第' + str(n) + ' 张')
+                                    # with open(Directory + timename+url[-5:], 'wb') as f:
+                                    #  f.write(requests.get(url).content)
+                                    # print('...OK!')
+                                    # n = n + 1
+
+                               # if n%3==0 :  ##延迟爬取，防止截流
+                                  #  time.sleep(3)
+
+                        attitudes_count = mblog.get('attitudes_count')
+                        comments_count = mblog.get('comments_count')
+                        created_at = mblog.get('created_at')
+                        reposts_count = mblog.get('reposts_count')
+                        scheme = cards[j].get('scheme')
+                        text = mblog.get('text')
+
+                        with open(file, 'a', encoding='utf-8') as fh:
+                          #  fh.write("----第"+str(i)+"页，第"+str(j)+"条微博----"+"\n")
+                            # fh.write("发布时间："+str(created_at)+"\n"+"微博内容："+text+"\n")
+                            fh.write(text+"\n")
+                i += 1
+            else:
+                break
+
+        except Exception as e:
+            print(e)
+            pass
+
+def getuid_region(page):#台湾
+   url='https://s.weibo.com/user?q=&region=custom:71:1000&Refer=g'
+
+   header = {'User-Agent':'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/49.0.2623.221 Safari/537.36 SE 2.X MetaSr 1.0'
+          ,'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+   }
+   # coo=get_cookie_from_network()
+   cookie={'cookies':'SCF=AoxdAt5_EyhZOTJEscTU2iQn4qq3Yoo0GRBFx7oPweI-GhSxkvWojKqc-RB5Z2D5F8WusmYxQD321vRMR7xXBeY.; SUBP=0033WrSXqPxfM725Ws9jqgMF55529P9D9W5a-V_JIj.oChvohT19rgJf5JpX5K-hUgL.Fo24S0BcehnES0e2dJLoI0qLxKBLBonL12BLxK-L1KzLBonLxKML1-2L1hBLxKnLBo2L1hqLxKML1KeLBKeLxK.L1h-LBo2t; SUB=_2A25wCY1TDeRhGedH7FYX8CbOzD-IHXVT9RMbrDV6PUJbkdBeLXPWkW1NULeMJQ123zBsF-BL1ISZQZJ8krlV8a2h; SUHB=0G0vcYlVvyXqjs; SSOLoginState=1561197827'}
+
+   uid = []
+   num=0
+#利用bs4库解析html
+
+   for i in range(6,page):#页数
+    # div=soup.find_all(name='div')
+    url='https://s.weibo.com/user?q=&region=custom:71:1000&Refer=g&page='+str(i)
+    req = requests.get(url, timeout=5, headers=header, cookies=cookie)
+    #
+    #    # 打开并读取url内信息
+    soup = sp(req.content, 'html.parser')
+    divs=soup.find(name='div',id='pl_feed_main')
+    divs=divs.find(name='div')#m-con-1
+    divs=divs.find(name='div',id='pl_user_feedList')
+    divs=divs.findAll(name='div',class_='info')
+    for div in  divs:
+    # a=div.find(name='a',class_='name')
+     try:
+        s_btn_c=div.find(name='a',class_='s-btn-c')
+        uid.append(s_btn_c['uid'])
+     except:
+        continue
+     else:
+        num=num+1
+        print(num)
+
+   return uid
+def getuid(name):
+   url='https://s.weibo.com/user?q='+name+'&wvr=6&topsug=1&Refer=SUer_box'
+
+   header = {'User-Agent':'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/49.0.2623.221 Safari/537.36 SE 2.X MetaSr 1.0'
+          ,'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+   }
+   # coo=get_cookie_from_network()
+   cookie={'cookies':'SCF=AoxdAt5_EyhZOTJEscTU2iQn4qq3Yoo0GRBFx7oPweI-GhSxkvWojKqc-RB5Z2D5F8WusmYxQD321vRMR7xXBeY.; SUBP=0033WrSXqPxfM725Ws9jqgMF55529P9D9W5a-V_JIj.oChvohT19rgJf5JpX5K-hUgL.Fo24S0BcehnES0e2dJLoI0qLxKBLBonL12BLxK-L1KzLBonLxKML1-2L1hBLxKnLBo2L1hqLxKML1KeLBKeLxK.L1h-LBo2t; SUB=_2A25wCY1TDeRhGedH7FYX8CbOzD-IHXVT9RMbrDV6PUJbkdBeLXPWkW1NULeMJQ123zBsF-BL1ISZQZJ8krlV8a2h; SUHB=0G0vcYlVvyXqjs; SSOLoginState=1561197827'}
+   req = requests.get(url,timeout=5,  headers=header, cookies=cookie)
+
+   #打开并读取url内信息
+   soup = sp(req.content, 'html.parser')
+
+#利用bs4库解析html
+
+   # div=soup.find_all(name='div')
+   div=soup.find(name='div',id='pl_feed_main')
+   div=div.find(name='div')#m-con-1
+   div=div.find(name='div',class_='info')
+   a=div.find(name='a',class_='name')
+   url=a['href']
+   uid=url[-10:]
+   return uid
+
+def get_weibo_text(path,name):
+    url = 'https://s.weibo.com/user?q=' + name + '&wvr=6&topsug=1&Refer=SUer_box'
+
+    header = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/49.0.2623.221 Safari/537.36 SE 2.X MetaSr 1.0'
+        , 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+        }
+    # coo=get_cookie_from_network()
+    cookie = {
+        'cookies': 'SCF=AoxdAt5_EyhZOTJEscTU2iQn4qq3Yoo0GRBFx7oPweI-GhSxkvWojKqc-RB5Z2D5F8WusmYxQD321vRMR7xXBeY.; SUBP=0033WrSXqPxfM725Ws9jqgMF55529P9D9W5a-V_JIj.oChvohT19rgJf5JpX5K-hUgL.Fo24S0BcehnES0e2dJLoI0qLxKBLBonL12BLxK-L1KzLBonLxKML1-2L1hBLxKnLBo2L1hqLxKML1KeLBKeLxK.L1h-LBo2t; SUB=_2A25wCY1TDeRhGedH7FYX8CbOzD-IHXVT9RMbrDV6PUJbkdBeLXPWkW1NULeMJQ123zBsF-BL1ISZQZJ8krlV8a2h; SUHB=0G0vcYlVvyXqjs; SSOLoginState=1561197827'}
+
+    follow_url=get_userInfo(name)
+
+    from selenium import webdriver
+    driver = webdriver.PhantomJS(
+        executable_path=r'E:\下载\phantomjs-2.1.1-windows\phantomjs-2.1.1-windows\bin\phantomjs.exe')
+    driver.get(follow_url)
+    time.sleep(1)
+    driver.find_element_by_xpath('//li[@class=""]').click()
+    soup=sp(driver.page_source,'html.parser')
+    # print(driver.page_source)
+    # driver.find_element_by_xpath('//div[@id="app"]')
+    div=soup.find(name='div',id='app')
+    uid=getuid(name)
+
+
+    print(uid)
+    get_weibo(uid,file=path)
+
+# top n search_key
+import requests
+import re
+import urllib
+import time
+
+
+class Top(object):
+
+    def __init__(self, banner):
+        self.banner = banner
+        self.titles = []
+        self.names = []
+        self.links = []
+        self.summary = {}
+        self.headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/57.0.2987.133 Safari/537.36"}
+        self.url="http://s.weibo.com/top/summary?cate=realtimehot"
+        self.cookies={'cookies':'SCF=AoxdAt5_EyhZOTJEscTU2iQn4qq3Yoo0GRBFx7oPweI-GhSxkvWojKqc-RB5Z2D5F8WusmYxQD321vRMR7xXBeY.; SUBP=0033WrSXqPxfM725Ws9jqgMF55529P9D9W5a-V_JIj.oChvohT19rgJf5JpX5K-hUgL.Fo24S0BcehnES0e2dJLoI0qLxKBLBonL12BLxK-L1KzLBonLxKML1-2L1hBLxKnLBo2L1hqLxKML1KeLBKeLxK.L1h-LBo2t; SUB=_2A25wCY1TDeRhGedH7FYX8CbOzD-IHXVT9RMbrDV6PUJbkdBeLXPWkW1NULeMJQ123zBsF-BL1ISZQZJ8krlV8a2h; SUHB=0G0vcYlVvyXqjs; SSOLoginState=1561197827'}
+        # str=get_cookie_from_network()
+        # self.autocookies={'cookies':cookies}
+    def get_top(self):
+        r = requests.get(self.url, headers=self.headers)
+        soup = sp(r.content, 'html.parser')
+        temp = soup.find(name='div',id='pl_top_realtimehot')
+        table=temp.find(name='table')
+        tbody=table.find(name='tbody')
+        tr=tbody.findAll(name='tr')
+
+        for i in tr:
+            top_=i.find(name='td',class_='td-02')
+            t_name=top_.text
+            t_list=t_name.split('\n')
+            t_name=t_list[1]
+            self.titles.append(t_name)
+        for i in self.titles:
+            self.names.append(urllib.parse.unquote(i))
+            link = 'https://s.weibo.com/weibo?q=%23' + i
+            self.links.append(link)
+            time.sleep(0.5)
+            self.get_news(link,i)
+        print('Done')
+        return self.summary
+    def get_news(self, link,keyword):
+        new = []
+        ne = []
+        n = []
+        z = []
+
+        r = requests.get(link, headers=self.headers,cookies=self.cookies)
+        soup = sp(r.content, 'html.parser')
+        card=soup.find(name='div',class_='m-main')
+        card = card.find(name='div', id='pl_feed_main')
+        card=card.findAll(name='div',class_='card-wrap')
+        card=card[2].find(name='div',class_='card')
+        try:
+         text_=card.find(name='p',class_='txt')
+        except:
+         text_=card.text
+        else:
+         text_ = text_.text
+        text_ = text_.strip()
+        text_ = text_.replace("\n", '')
+        self.summary[keyword] = {'text': text_,'url':link}
+    def save_news(self,filename):
+        f=open(filename,'w',encoding='UTF-8')
+        for i in self.summary.keys():
+            f.write(self.summary[i]['text']+'\n')
+        f.close()
+
+
+
